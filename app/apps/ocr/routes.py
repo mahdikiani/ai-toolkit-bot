@@ -1,0 +1,63 @@
+from io import BytesIO
+
+from fastapi import BackgroundTasks, Query, Request
+from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi_mongo_base.routes import AbstractTaskRouter, PaginatedResponse
+from usso.integrations.fastapi import USSOAuthentication
+
+from server.config import Settings
+
+from .models import OcrTask
+from .schemas import OcrTaskSchema, OcrTaskSchemaCreate
+
+
+class OCRRouter(AbstractTaskRouter):
+    model = OcrTask
+    schema = OcrTaskSchema
+
+    def __init__(self) -> None:
+        super().__init__(user_dependency=USSOAuthentication(), draftable=False)
+
+    def config_routes(self, **kwargs: object) -> None:
+        super().config_routes(update_route=False, **kwargs)
+        self.router.add_api_route(
+            "/{uid}/result",
+            self.get_result,
+            methods=["GET"],
+        )
+
+    async def list_items(
+        self,
+        request: Request,
+        offset: int = Query(0, ge=0),
+        limit: int = Query(10, ge=1, le=Settings.page_max_limit),
+        user_id: str | None = None,
+    ) -> PaginatedResponse[OcrTaskSchema]:
+        return await self._list_items(request, offset, limit, user_id=user_id)
+
+    async def create_item(
+        self,
+        request: Request,
+        data: OcrTaskSchemaCreate,
+        background_tasks: BackgroundTasks,
+    ) -> OcrTask:
+        return await super().create_item(request, data.model_dump(), background_tasks)
+
+    async def get_result(self, request: Request, uid: str):  # noqa: ANN201
+        task: OcrTask = await self.retrieve_item(request, uid)
+
+        # Assuming the OCR result is stored in task.result or similar
+        # Adjust the attribute as per your OcrTask model
+        if task.task_status != "completed":
+            return PlainTextResponse(
+                "No result available, please wait for the task to complete.",
+            )
+
+        return StreamingResponse(
+            BytesIO((task.result or "").encode("utf-8")),
+            media_type="text/plain",
+            headers={"Content-Disposition": 'attachment; filename="result.txt"'},
+        )
+
+
+router = OCRRouter().router
