@@ -1,6 +1,6 @@
 import logging
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Generator
 
 import httpx
 import pytest
@@ -24,18 +24,18 @@ def setup_debugpy() -> None:
 
 
 @pytest.fixture(scope="session")
-def mongo_client() -> AsyncGenerator[object]:
+def mongo_client() -> Generator[object]:
     from mongomock_motor import AsyncMongoMockClient
 
-    mongo_client = AsyncMongoMockClient()
+    mongo_client: AsyncMongoMockClient = AsyncMongoMockClient()
     yield mongo_client
 
 
 # Async setup function to initialize the database with Beanie
 async def init_db(mongo_client: object) -> None:
-    database = mongo_client.get_database("test_db")
+    database = mongo_client.get_database("test_db")  # type: ignore
     await init_beanie(
-        database=database,
+        database=database,  # type: ignore
         document_models=get_all_subclasses(base_mongo_models.BaseEntity),
     )
 
@@ -67,6 +67,6 @@ async def authenticated_client(
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=fastapi_app),
         base_url=client.base_url,
-        headers={"x-api-key": os.getenv("API_KEY")},
+        headers={"x-api-key": os.getenv("API_KEY") or ""},
     ) as ac:
         yield ac

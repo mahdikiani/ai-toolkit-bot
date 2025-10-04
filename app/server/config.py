@@ -14,21 +14,21 @@ dotenv.load_dotenv()
 class Settings(config.Settings):
     """Server config settings."""
 
-    project_name: str = os.getenv("PROJECT_NAME")
+    project_name: str = os.getenv("PROJECT_NAME", "pishrun ai")
     base_dir: Path = Path(__file__).resolve().parent.parent
     base_path: str = "/api/ai/v1"
 
     coverage_dir: Path = base_dir / "htmlcov"
     currency: str = "IRR"
 
-    finance_api_key: str = os.getenv("API_KEY")
-    gemini_api_key: str = os.getenv("GEMINI_API_KEY")
-    metis_api_key: str = os.getenv("METIS_API_KEY")
-    pishrun_api_key: str = os.getenv("PISHRUN_API_KEY")
-    dify_api_key: str = os.getenv("DIFY_API_KEY")
-    soniox_api_key: str = os.getenv("SONIOX_API_KEY")
+    finance_api_key: str | None = os.getenv("API_KEY")
+    gemini_api_key: str | None = os.getenv("GEMINI_API_KEY")
+    metis_api_key: str | None = os.getenv("METIS_API_KEY")
+    pishrun_api_key: str | None = os.getenv("PISHRUN_API_KEY")
+    dify_api_key: str | None = os.getenv("DIFY_API_KEY")
+    soniox_api_key: str | None = os.getenv("SONIOX_API_KEY")
 
-    minutes_price: float = os.getenv("MINUTES_PRICE", 1)
+    minutes_price: float = float(os.getenv("MINUTES_PRICE", 1))
 
     @classmethod
     def get_log_config(cls, console_level: str = "INFO", **kwargs: object) -> dict:

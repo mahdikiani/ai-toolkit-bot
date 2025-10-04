@@ -18,7 +18,7 @@ class OcrTaskSchemaCreate(BaseModel):
 
     async def file_content(self) -> BytesIO:
         if hasattr(self, "_file_content"):
-            return self._file_content
+            return getattr(self, "_file_content", BytesIO())
 
         self._file_content = BytesIO()
         async with httpx.AsyncClient() as client:
@@ -32,7 +32,7 @@ class OcrTaskSchemaCreate(BaseModel):
         return base64.b64encode(content.getvalue()).decode("utf-8")
 
 
-class OcrTaskSchema(UserOwnedEntitySchema, TaskMixin, OcrTaskSchemaCreate):
+class OcrTaskSchema(UserOwnedEntitySchema, TaskMixin, OcrTaskSchemaCreate):  # type: ignore[misc]
     result: str | None = None
     usage_amount: float | None = None
     usage_id: str | None = None

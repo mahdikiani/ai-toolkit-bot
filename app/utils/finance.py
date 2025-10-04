@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from decimal import Decimal
 
 import httpx
-from ufaas import exceptions, services
+from ufaas import exceptions
 
 from server.config import Settings
 
@@ -13,10 +13,10 @@ resource_variant = getattr(Settings, "UFAAS_RESOURCE_VARIANT", "")
 
 
 @asynccontextmanager
-async def get_ufaas_client() -> AsyncGenerator[services.AccountingClient]:
+async def get_ufaas_client() -> AsyncGenerator[httpx.AsyncClient]:
     async with httpx.AsyncClient(
         base_url="https://saas.uln.me/api/saas/v1/",
-        headers={"x-api-key": Settings.finance_api_key},
+        headers={"x-api-key": Settings.finance_api_key or ""},
     ) as client:
         yield client
 
@@ -28,7 +28,7 @@ async def meter_cost(
         usage_schema = UsageCreateSchema(
             user_id=user_id,
             asset="coin",
-            amount=str(amount),
+            amount=Decimal(str(amount)),
             variant=resource_variant,
             meta_data=meta_data,
         )

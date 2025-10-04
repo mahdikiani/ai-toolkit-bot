@@ -91,7 +91,12 @@ class TranscribeRouter(AbstractTaskRouter):
             background_tasks.add_task(services.process_error_webhook, item)
             return {"message": "Error"}
 
-        background_tasks.add_task(services.process_transcription_webhook, item, data)
+        if isinstance(data, TranscriptionWebhook):
+            background_tasks.add_task(
+                services.process_transcription_webhook, item, data
+            )
+        else:
+            await services.save_error(item, "Invalid webhook data")
         return {}
 
 

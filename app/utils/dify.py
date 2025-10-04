@@ -4,13 +4,16 @@ import os
 from io import BytesIO
 from pathlib import Path
 
-import aiofiles
 import httpx
 from PIL import Image
 
 
 class DifyClient(httpx.Client):
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
+        api_key = api_key or os.getenv("DIFY_API_KEY", "")
+        if not api_key or not api_key.strip():
+            raise ValueError("DIFY_API_KEY environment variable is not set")
+
         super().__init__(
             # base_url="https://api.dify.ai/v1",
             base_url="https://api.morshed.pish.run/v1",
@@ -68,7 +71,10 @@ class DifyClient(httpx.Client):
 
 
 class AsyncDifyClient(httpx.AsyncClient):
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str | None = None) -> None:
+        api_key = api_key or os.getenv("DIFY_API_KEY", "")
+        if not api_key or not api_key.strip():
+            raise ValueError("DIFY_API_KEY environment variable is not set")
         super().__init__(
             # base_url="https://api.dify.ai/v1",
             base_url="https://api.morshed.pish.run/v1",
@@ -77,6 +83,8 @@ class AsyncDifyClient(httpx.AsyncClient):
         )
 
     async def upload_file(self, file: Path | str) -> str:
+        import aiofiles
+
         if isinstance(file, str):
             file = Path(file)
         async with aiofiles.open(file, "rb") as f:
@@ -92,7 +100,7 @@ class AsyncDifyClient(httpx.AsyncClient):
             output.seek(0)
             return await self.upload_file_bytes(output)
 
-    async def upload_image_bytes(self, file: BytesIO) -> str:
+    async def upload_file_bytes(self, file: BytesIO) -> str:
         file.seek(0)
         files = {"file": ("image.jpg", file.read(), "image/jpeg")}
         payload = {"user": "me"}
@@ -133,11 +141,11 @@ class AsyncDifyClient(httpx.AsyncClient):
         response.raise_for_status()
         return response.json().get("answer")
 
-    async def ocr_image(self, file: Path | str | Image.Image) -> str:
+    async def ocr_image(self, file: Path | str | Image.Image | BytesIO) -> str:
         if isinstance(file, Image.Image):
             file_id = await self.upload_image(file)
         elif isinstance(file, BytesIO):
-            file_id = await self.upload_image_bytes(file)
+            file_id = await self.upload_file_bytes(file)
         else:
             file_id = await self.upload_file(file)
         return await self.chat_messages("متن تصویر را بده", file_id)
@@ -148,7 +156,7 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO)
     dotenv.load_dotenv()
-    api_key = os.getenv("DIFY_API_KEY")
+    api_key: str = os.getenv("DIFY_API_KEY", "")
     client = DifyClient(api_key)
     image = Path("contents/انتشارات سوره مهر نسخه دیجیتال.jpg")
     text = client.ocr_image(image)

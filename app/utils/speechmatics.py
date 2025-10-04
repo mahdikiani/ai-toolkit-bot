@@ -1,7 +1,7 @@
 import json
 import os
 from datetime import datetime, timedelta
-from enum import Enum, StrEnum
+from enum import StrEnum
 from typing import Self
 
 import httpx
@@ -262,14 +262,14 @@ class JobConfig(BaseModel):
     type: str
 
 
-class JobStatus(Enum):
+class JobStatus(StrEnum):
     running = "running"
     done = "done"
     rejected = "rejected"
 
     @classmethod
     def finishes(cls) -> list[Self]:
-        return [cls.done, cls.rejected]
+        return [cls.done, cls.rejected]  # type: ignore[list-item]
 
     def is_finished(self) -> bool:
         return self in self.finishes()
@@ -290,49 +290,6 @@ class JobDetails(BaseModel):
     errors: list[JobError] | None = None
 
 
-if __name__ == "__main__":
-    # Example usage:
-    json_data = {
-        "format": "2.9",
-        "job": {
-            "created_at": "2024-12-06T14:38:56.747Z",
-            "data_name": "",
-            "duration": 54,
-            "id": "n52ui3rctg",
-        },
-        "metadata": {
-            "created_at": "2024-12-06T14:39:12.289938Z",
-            "language_identification": {"predicted_language": "en"},
-            "language_pack_info": {
-                "adapted": False,
-                "itn": True,
-                "language_description": "English",
-                "word_delimiter": " ",
-                "writing_direction": "left-to-right",
-            },
-            "transcription_config": {"diarization": "speaker", "language": "auto"},
-            "type": "transcription",
-        },
-        "results": [
-            {
-                "alternatives": [
-                    {
-                        "confidence": 1.0,
-                        "content": "Huawei",
-                        "language": "en",
-                        "speaker": "S1",
-                    }
-                ],
-                "end_time": 0.6,
-                "start_time": 0.09,
-                "type": "word",
-            }
-        ],
-    }
-
-    data_model = TranscribeWebhookSchema(**json_data)
-
-
 class Speechmatics(metaclass=Singleton):
     def __init__(self, api_key: str | None = None) -> None:
         self.base_url = "https://asr.api.speechmatics.com/v2"
@@ -351,7 +308,7 @@ class Speechmatics(metaclass=Singleton):
         enhanced: bool = True,
         **kwargs: object,
     ) -> str:
-        conf = {
+        conf: dict = {
             "type": "transcription",
             "audio_events_config": {"types": ["laughter", "music", "applause"]},
             "transcription_config": {
@@ -411,7 +368,7 @@ class Speechmatics(metaclass=Singleton):
 
 def transcript_to_sequence(
     transcript: list[TranscriptionResult],
-) -> tuple[list[tuple[int, int]], list[str]]:
+) -> tuple[list[list[float]], list[str], list[str]]:
     # This function takes in a Speechmatics transcript object returned by
     # the Speechmatics API, which is a list of TranscriptionResult objects
     # and extracts a pair of lists, timings and sentences, that includes
@@ -441,7 +398,7 @@ def transcript_to_sequence(
     return timings, sentences, languages
 
 
-def generate_srt(timings: list[tuple[int, int]], sentence_seq: list[str]) -> str:
+def generate_srt(timings: list[list[float]], sentence_seq: list[str]) -> str:
     # Function to convert time in seconds to SRT format
     def convert_time(seconds: float) -> str:
         time_delta = timedelta(seconds=seconds)

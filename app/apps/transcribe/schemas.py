@@ -16,7 +16,7 @@ class TranscribeTaskSchemaCreate(BaseModel):
 
     async def file_content(self) -> BytesIO:
         if hasattr(self, "_file_content"):
-            return self._file_content
+            return getattr(self, "_file_content", BytesIO())
 
         self._file_content = BytesIO()
         async with httpx.AsyncClient() as client:
@@ -30,7 +30,7 @@ class TranscribeTaskSchemaCreate(BaseModel):
         return base64.b64encode(content.getvalue()).decode("utf-8")
 
 
-class TranscribeTaskSchema(
+class TranscribeTaskSchema(  # type: ignore[misc]
     UserOwnedEntitySchema, TaskMixin, TranscribeTaskSchemaCreate
 ):
     result: str | None = None

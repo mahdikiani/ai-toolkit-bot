@@ -2,12 +2,15 @@ import asyncio
 import logging
 from io import BytesIO
 
+from fastapi_mongo_base.tasks import TaskStatusEnum
+from PIL import Image
+
 from server.config import Settings
 from utils import dify, finance, imagetools, mime, pdftools, texttools
 
 from .models import OcrTask
 
-CONVERTING_IMAGE_EXTS = {"image/png", "image/tiff"}
+CONVERTING_IMAGE_EXTS = {"image/png", "image/tiff", "image/webp"}
 IMAGE_EXTS = {"image/jpeg"}
 DOCX_EXTS = {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 PDF_EXTS = {"application/pdf"}
@@ -17,47 +20,64 @@ PPTX_EXTS = {
 
 
 async def process_ocr(task: OcrTask) -> OcrTask:
-    logging.info("Starting processing for task %s", task.id)
-    file_content = await task.file_content()
-    file_type = mime.check_file_type(file_content)
-    if file_type in DOCX_EXTS:
-        res = extract_docx(file_content)
-        return await save_result(task, res)
-    elif file_type in PPTX_EXTS:
-        res = extract_pptx(file_content)
-        return await save_result(task, res)
-    elif file_type in PDF_EXTS:
-        pages = pdftools.extract_pdf_bytes_pages(file_content)
-    elif file_type in CONVERTING_IMAGE_EXTS:
-        pages = [imagetools.convert_to_jpg_bytes(file_content)]
-    elif file_type in IMAGE_EXTS:
-        pages = [file_content]
-    else:
-        raise ValueError(f"Unsupported file type: {file_type}")
+    try:
+        logging.info("Starting processing for task %s", task.id)
+        file_content = await task.file_content()
+        file_type = mime.check_file_type(file_content)
+        pages: list[BytesIO] = []
+        if file_type in DOCX_EXTS:
+            res = extract_docx(file_content)
+            return await save_result(task, res)
+        elif file_type in PPTX_EXTS:
+            res = extract_pptx(file_content)
+            return await save_result(task, res)
+        elif file_type in PDF_EXTS:
+            pages_image: list[Image.Image] = pdftools.extract_pdf_bytes_pages(
+                file_content
+            )
+            pages = [imagetools.convert_to_jpg_bytes(page) for page in pages_image]
+        elif file_type in CONVERTING_IMAGE_EXTS:
+            pages = [imagetools.convert_to_jpg_bytes(file_content)]
+        elif file_type in IMAGE_EXTS:
+            pages = [file_content]
+        else:
+            return await save_error(task, f"Unsupported file type: {file_type}")
 
-    quota = await finance.check_quota(task.user_id, len(pages), raise_exception=False)
-    if quota < len(pages):
-        task.task_status = "error"
-        await task.save_report("insufficient_quota")
+        quota = await finance.check_quota(
+            task.user_id, len(pages), raise_exception=False
+        )
+        if quota < len(pages):
+            task.task_status = TaskStatusEnum.error
+            await task.save_report("insufficient_quota")
+            return task
+
+        async with dify.AsyncDifyClient(Settings.pishrun_api_key) as client:
+            sem = asyncio.Semaphore(16)
+
+            async def sem_ocr(page: BytesIO) -> str | None:
+                async with sem:
+                    return await client.ocr_image(page)
+
+            text_pages = await asyncio.gather(*(sem_ocr(page) for page in pages))
+
+        usage = await finance.meter_cost(task.user_id, len(pages))
+        await save_result(
+            task,
+            "\n\n".join([t for t in text_pages if t]),
+            usage_amount=float(usage.amount),
+            usage_id=usage.uid,
+        )
+    except Exception:
+        logging.exception("Error processing task %s", task.id)
+        await save_error(task, "error")
         return task
 
-    async with dify.AsyncDifyClient(Settings.pishrun_api_key) as client:
-        sem = asyncio.Semaphore(16)
+    return task
 
-        async def sem_ocr(page: BytesIO) -> str | None:
-            async with sem:
-                return await client.ocr_image(page)
 
-        text_pages = await asyncio.gather(*(sem_ocr(page) for page in pages))
-
-    usage = await finance.meter_cost(task.user_id, len(pages))
-    await save_result(
-        task,
-        "\n\n".join([t for t in text_pages if t]),
-        usage_amount=usage.amount,
-        usage_id=usage.uid,
-    )
-
+async def save_error(task: OcrTask, message: str) -> OcrTask:
+    task.task_status = TaskStatusEnum.error
+    await task.save_report(message)
     return task
 
 
@@ -68,7 +88,7 @@ async def save_result(
     usage_id: str | None = None,
 ) -> OcrTask:
     task.result = texttools.normalize_text(result)
-    task.task_status = "completed"
+    task.task_status = TaskStatusEnum.completed
     task.usage_amount = usage_amount
     task.usage_id = usage_id
     return await task.save()
@@ -86,7 +106,7 @@ def extract_pptx(file_content: BytesIO) -> str:
     import pptx
 
     prs = pptx.Presentation(file_content)
-    texts = []
+    texts: list[str] = []
     for slide in prs.slides:
         texts.extend(
             shape.text

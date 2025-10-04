@@ -1,7 +1,9 @@
 import logging
 import math
 
+from fastapi_mongo_base.tasks import TaskStatusEnum
 from soniox import SonioxClient
+from soniox.languages import Language
 from soniox.types import (
     TranscriptionConfig,
     TranscriptionJobStatus,
@@ -29,14 +31,12 @@ async def process_transcribe(
         task.user_id, task.audio_duration, raise_exception=False
     )
     if quota < 1:
-        task.task_status = "error"
-        await task.save_report("insufficient_quota")
-        return task
+        return await save_error(task, "insufficient_quota")
 
     job = await soniox.transcribe_url_async(
         task.file_url,
-        TranscriptionConfig(
-            language_hints=["fa", "en"],
+        TranscriptionConfig(  # type: ignore[call-arg]
+            language_hints=[Language.PERSIAN, Language.ENGLISH],
             enable_language_identification=True,
             enable_speaker_diarization=True,
             client_reference_id=task.uid,
@@ -57,29 +57,42 @@ async def process_transcribe(
     #     ),
     #     # enhanced=task.enhanced,
     # )
+
     task.transcription_job_id = job.id
-    task.task_status = "processing"
+    task.task_status = TaskStatusEnum.processing
     await task.save()
     if not sync:
         return task
 
     await conditions.Conditions().wait_condition(task.uid)
 
-    task = await TranscribeTask.get_item(task.uid, user_id=task.user_id)
-    job_result = await soniox.get_transcription_job_async(task.transcription_job_id)
+    finished_task = await TranscribeTask.get_item(task.uid, user_id=task.user_id)
+    if not finished_task or not finished_task.transcription_job_id:
+        return await save_error(task, "transcription_failed")
+    job_result = await soniox.get_transcription_job_async(
+        finished_task.transcription_job_id
+    )
 
     if job_result.status != TranscriptionJobStatus.COMPLETED:
-        task.task_status = "error"
-        await task.save_report("transcription_failed")
-        return task
+        return await save_error(task, "transcription_failed")
 
     return await process_transcription_webhook(
-        task,
+        finished_task,
         TranscriptionWebhook(
             id=job_result.id,
             status=job_result.status,
         ),
     )
+
+
+async def save_error(
+    task: TranscribeTask, message: str, **kwargs: object
+) -> TranscribeTask:
+    task.task_status = TaskStatusEnum.error
+    await task.save_report(message)
+    await conditions.Conditions().release_condition(task.uid)
+    logging.warning("Transcription rejected %s", f"{message}\n\n{kwargs}")
+    return task
 
 
 async def save_result(
@@ -89,7 +102,7 @@ async def save_result(
     usage_id: str | None = None,
 ) -> TranscribeTask:
     task.result = texttools.normalize_text(result)
-    task.task_status = "completed"
+    task.task_status = TaskStatusEnum.completed
     task.usage_amount = usage_amount
     task.usage_id = usage_id
     return await task.save()
@@ -104,7 +117,7 @@ async def process_transcription_webhook(
     # Extract the sentences and timings from the data
     translation_cost = 0
 
-    if task.transcription_job_id != data.id:
+    if not task.transcription_job_id or task.transcription_job_id != data.id:
         return await process_error_webhook(task, "Transcription job ID does not match")
     if data.status != TranscriptionJobStatus.COMPLETED:
         return await process_error_webhook(task, "Transcription job status is error")
@@ -114,7 +127,7 @@ async def process_transcription_webhook(
     job_result = await soniox.get_transcription_job_async(task.transcription_job_id)
 
     transcription_cost = math.ceil(
-        (job_result.audio_duration_ms / 60 / 1000) * Settings.minutes_price
+        ((job_result.audio_duration_ms or 0) / 60 / 1000) * Settings.minutes_price
     )
     total_cost = transcription_cost + translation_cost
     await finance.meter_cost(task.user_id, total_cost)
@@ -126,7 +139,7 @@ async def process_transcription_webhook(
         transcription_cost,
     )
 
-    task.task_status = "completed"
+    task.task_status = TaskStatusEnum.completed
     await task.save_report("Task processed successfully")
     result = await soniox.get_transcription_result_async(task.transcription_job_id)
 
@@ -142,12 +155,8 @@ async def process_error_webhook(
     #        task.transcription_job_id
     #     )
     # )
+    if not task.transcription_job_id:
+        return await save_error(task, "Transcription job ID is required")
     job = await soniox.get_transcription_job_async(task.transcription_job_id)
 
-    task.task_status = "error"
-    await task.save_report(f"{message}\n\n{job.error_message}", emit=False)
-    logging.warning("Transcription rejected %s", f"{message}\n\n{job.error_message}")
-
-    await task.save_and_emit()
-    await conditions.Conditions().release_condition(task.uid)
-    return task
+    return await save_error(task, message, error_message=job.error_message)

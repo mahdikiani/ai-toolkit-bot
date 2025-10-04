@@ -3,6 +3,7 @@ from io import BytesIO
 from fastapi import BackgroundTasks, Query, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from fastapi_mongo_base.routes import AbstractTaskRouter, PaginatedResponse
+from fastapi_mongo_base.utils import usso_routes
 from usso.integrations.fastapi import USSOAuthentication
 
 from server.config import Settings
@@ -11,7 +12,7 @@ from .models import OcrTask
 from .schemas import OcrTaskSchema, OcrTaskSchemaCreate
 
 
-class OCRRouter(AbstractTaskRouter):
+class OCRRouter(AbstractTaskRouter, usso_routes.AbstractTenantUSSORouter):
     model = OcrTask
     schema = OcrTaskSchema
 
@@ -46,6 +47,15 @@ class OCRRouter(AbstractTaskRouter):
         data: OcrTaskSchemaCreate,
         background_tasks: BackgroundTasks,
     ) -> OcrTask:
+        user = await self.get_user(request)
+        await self.authorize(action="create", user=user, filter_data=data.model_dump())
+        item = await self.model.create_item({
+            **data.model_dump(),
+            "user_id": user.user_id,
+            "tenant_id": user.tenant_id,
+        })
+        return item
+
         return await super().create_item(request, data.model_dump(), background_tasks)
 
     async def get_result(self, request: Request, uid: str):  # noqa: ANN201

@@ -1,5 +1,6 @@
 import asyncio
-from io import BytesIO
+
+from fastapi_mongo_base.tasks import TaskStatusEnum
 
 from server.config import Settings
 from utils import dify, finance, texttools
@@ -12,7 +13,7 @@ async def process_translate(task: TranslateTask) -> TranslateTask:
     async with dify.AsyncDifyClient(Settings.pishrun_api_key) as client:
         sem = asyncio.Semaphore(16)
 
-        async def sem_translate(page: BytesIO) -> str | None:
+        async def sem_translate(page: str) -> str | None:
             async with sem:
                 return await client.translate(page)
 
@@ -22,7 +23,7 @@ async def process_translate(task: TranslateTask) -> TranslateTask:
     await save_result(
         task,
         "\n\n".join([t for t in text_pages if t]),
-        usage_amount=usage.amount,
+        usage_amount=float(usage.amount),
         usage_id=usage.uid,
     )
 
@@ -36,7 +37,7 @@ async def save_result(
     usage_id: str | None = None,
 ) -> TranslateTask:
     task.result = texttools.normalize_text(result)
-    task.task_status = "completed"
+    task.task_status = TaskStatusEnum.completed
     task.usage_amount = usage_amount
     task.usage_id = usage_id
     return await task.save()
