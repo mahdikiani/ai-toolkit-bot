@@ -15,12 +15,8 @@ COPY --from=fast-uv /usr/local/lib/python3.13/site-packages /usr/local/lib/pytho
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y libmagic1 \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN adduser --disabled-password --gecos '' user \
+RUN addgroup --system --gid 1000 user \
+    && adduser --system --uid 1000 --ingroup user --disabled-password --gecos '' --home /home/user user \
     && mkdir /app/logs \
     && chown -R user:user /app/logs
 
