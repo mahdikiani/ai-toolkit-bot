@@ -16,9 +16,13 @@ async def get_media_client() -> AsyncGenerator[httpx.AsyncClient]:
         yield client
 
 
-async def upload_file(file: BytesIO) -> str:
+async def upload_file(file: BytesIO, file_name: str | None = None) -> str:
     async with get_media_client() as media_client:
-        upload_response = await media_client.post("/f/upload", files={"file": file})
+        upload_response = await media_client.post(
+            "/f/upload",
+            files={"file": file},
+            data={"filename": file_name or file.name},
+        )
         upload_response.raise_for_status()
         file_id = upload_response.json().get("uid")
 

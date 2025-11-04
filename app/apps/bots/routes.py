@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks
 
 from apps.bots.handlers import update_bot
 
-router = APIRouter(prefix="/bots")
+router = APIRouter(prefix="/bots", tags=["Bots"])
 
 
 @router.post("/webhook/{bot}")

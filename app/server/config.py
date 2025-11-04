@@ -25,7 +25,7 @@ class Settings(config.Settings):
     ai_api_key: str | None = os.getenv("AI_API_KEY")
     media_api_key: str | None = os.getenv("MEDIA_API_KEY")
 
-    minutes_price: float = float(os.getenv("MINUTES_PRICE", 1))
+    ai_url: str = os.getenv("AI_BASE_URL")
 
     @classmethod
     def get_log_config(cls, console_level: str = "INFO", **kwargs: object) -> dict:

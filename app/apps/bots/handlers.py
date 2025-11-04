@@ -68,7 +68,7 @@ class BotHandler(metaclass=singleton.Singleton):
         bot.register_message_handler(
             message,
             func=lambda _: True,
-            content_types=["text", "voice"],
+            content_types=["text", "voice", "photo", "document", "audio"],
             pass_bot=True,
         )
         if bot.bot_type == "telegram":

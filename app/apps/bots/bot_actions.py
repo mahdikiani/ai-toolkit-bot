@@ -1,13 +1,13 @@
 import uuid
 from io import BytesIO
 
-from fastapi_mongo_base.utils.basic import try_except_wrapper
+from fastapi_mongo_base.utils import basic
 from telebot import async_telebot
 
 from apps.accounts.handlers import get_user_profile, get_usso_user
+from apps.ai import ocr
 from apps.bots import base_bot, keyboards, models, schemas, services
-from utils.b64tools import b64_decode_uuid
-from utils.texttools import is_valid_url
+from utils import texttools
 
 command_key = {
     "/start": "start",
@@ -109,7 +109,7 @@ async def voice(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
 
 
 async def photo(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
-    response = await bot.reply_to(message, "Please wait photo ...")
+    await bot.reply_to(message, "Please wait photo ...")
     photo_info = await bot.get_file(message.photo[-1].file_id)
     photo_file = await bot.download_file(photo_info.file_path)
     photo_bytes = BytesIO(photo_file)
@@ -118,12 +118,24 @@ async def photo(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
 
 
 async def document(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
-    response = await bot.reply_to(message, "Please wait document ...")
+    from utils import media
+
+    response_message = await bot.reply_to(message, "Please wait document ...")
     document_info = await bot.get_file(message.document.file_id)
     document_file = await bot.download_file(document_info.file_path)
-    document_bytes = BytesIO(document_file)
-    document_bytes.name = "document.pdf"
-    await services.ocr_response(document_bytes)
+
+    remote_file_url = await media.upload_file(
+        document_file, file_name=message.document.file_name
+    )
+    await ocr.OCRClient().asubmit_ocr_task(
+        remote_file_url,
+        {
+            "message_id": response_message.message_id,
+            "chat_id": message.chat.id,
+            # "user_id": message.user.uid,
+            "bot_name": bot.me,
+        },
+    )
 
 
 async def url_response(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
@@ -137,7 +149,10 @@ async def url_response(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> 
     )
 
 
+@basic.try_except_wrapper
 async def message(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
+    if message.document:
+        return await document(message, bot)
     if message.voice:
         return await voice(message, bot)
     if (
@@ -149,14 +164,14 @@ async def message(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
     if message.photo:
         return await photo(message, bot)
 
-    if is_valid_url(message.text):
+    if texttools.is_valid_url(message.text):
         return await url_response(message, bot)
 
     return await prompt(message, bot)
 
 
 async def callback_read(
-    call: async_telebot.types.CallbackQuery, bot: base_bot.BaseBot, **kwargs: object
+    call: schemas.CallbackQueryOwned, bot: base_bot.BaseBot, **kwargs: object
 ) -> None:
     message_id = uuid.UUID(call.data.split("_")[1])
     message: models.Message = await models.Message.get_item(
@@ -167,7 +182,7 @@ async def callback_read(
 
 
 async def callback_answer(
-    call: async_telebot.types.CallbackQuery, bot: base_bot.BaseBot, **kwargs: object
+    call: schemas.CallbackQueryOwned, bot: base_bot.BaseBot, **kwargs: object
 ) -> None:
     message_id = uuid.UUID(call.data.split("_")[1])
     message: models.Message = await models.Message.get_item(
@@ -179,7 +194,7 @@ async def callback_answer(
 
 
 async def callback_select_ai(
-    call: async_telebot.types.CallbackQuery, bot: base_bot.BaseBot, **kwargs: object
+    call: schemas.CallbackQueryOwned, bot: base_bot.BaseBot, **kwargs: object
 ) -> None:
     profile = call.message.profile
     profile.ai_engine = call.data.split("_")[2]
@@ -194,7 +209,7 @@ async def callback_select_ai(
 
 
 async def callback_brief(
-    call: async_telebot.types.CallbackQuery, bot: base_bot.BaseBot, **kwargs: object
+    call: schemas.CallbackQueryOwned, bot: base_bot.BaseBot, **kwargs: object
 ) -> None:
     wid = call.data.split("_")[2]
     response = await bot.reply_to(call.message, "Please wait for content ...")
@@ -208,10 +223,9 @@ async def callback_brief(
 
 
 async def callback_content_select(
-    call: async_telebot.types.CallbackQuery, bot: base_bot.BaseBot, **kwargs: object
+    call: schemas.CallbackQueryOwned, bot: base_bot.BaseBot, **kwargs: object
 ) -> None:
     webpage_response_uid, tuple_string = call.data.split(":")[-2:]
-    webpage_response_uid = b64_decode_uuid(webpage_response_uid)
     tuple_elements = tuple_string.strip("()").split(",")
     new_state = tuple(map(int, tuple_elements))
     await bot.edit_message_reply_markup(
@@ -221,27 +235,8 @@ async def callback_content_select(
     )
 
 
-async def callback_content_submit(
-    call: async_telebot.types.CallbackQuery, bot: base_bot.BaseBot, **kwargs: object
-) -> None:
-    response = await bot.reply_to(call.message, "Please wait for rendering ...")
-
-    webpage_response_uid, tuple_string = call.data.split(":")[-2:]
-    webpage_response_uid = b64_decode_uuid(webpage_response_uid)
-    tuple_elements = tuple_string.strip("()").split(",")
-    state = tuple(map(int, tuple_elements))
-    await services.content_submit(
-        wrid=webpage_response_uid,
-        state=state,
-        profile=call.message.profile,
-        chat_id=call.message.chat.id,
-        bot_name=bot.me,
-        response_id=response.id,
-    )
-
-
 async def callback(
-    call: async_telebot.types.CallbackQuery, bot: base_bot.BaseBot, **kwargs: object
+    call: schemas.CallbackQueryOwned, bot: base_bot.BaseBot, **kwargs: object
 ) -> None:
     if bot.bot_type == "telegram":
         await bot.answer_callback_query(call.id, text="Processing ...")
@@ -256,11 +251,9 @@ async def callback(
         return await callback_brief(call, bot)
     elif call.data.startswith("content:select:"):
         return await callback_content_select(call, bot)
-    elif call.data.startswith("content:submit:"):
-        return await callback_content_submit(call, bot)
 
 
-@try_except_wrapper
+@basic.try_except_wrapper
 async def inline_query(
     inline_query: async_telebot.types.InlineQuery, bot: base_bot.BaseBot
 ) -> None:
