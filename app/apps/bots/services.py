@@ -9,8 +9,7 @@ from server.config import Settings
 
 
 def get_openai() -> openai.AsyncOpenAI:
-    openai.api_key = Settings.OPENAI_API_KEY
-    proxy_url = Settings.PROXY
+    proxy_url = getattr(Settings, "PROXY", None)
 
     if proxy_url:
         proxies = {
@@ -26,8 +25,9 @@ def get_openai() -> openai.AsyncOpenAI:
         # )
         client = openai.AsyncOpenAI(
             # base_url="https://api.avalai.ir/v1", api_key=Settings.AVVALAI_API_KEY
-            base_url="https://api.metisai.ir/openai/v1",
-            api_key=Settings.METIS_API_KEY,
+            # base_url="https://api.metisai.ir/openai/v1",
+            base_url="https://openrouter.ai/api/v1",
+            api_key=Settings.openrouter_api_key,
         )
 
     return client
@@ -48,8 +48,10 @@ def ai_response(
 
 async def stt_response(voice_bytes: BytesIO, **kwargs: object) -> str:
     client = get_openai()
+    if not voice_bytes.name:
+        voice_bytes.name = "voice.ogg"
     transcription = await client.audio.transcriptions.create(
-        model="whisper-1", file=voice_bytes
+        model="openai/whisper-1", file=voice_bytes
     )
     return transcription.text
 

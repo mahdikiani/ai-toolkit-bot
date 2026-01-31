@@ -76,14 +76,20 @@ async def prompt(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
 
 
 async def voice(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None:
+    from utils import media
+
     response: schemas.MessageOwned = await bot.reply_to(
         message, "Please wait voice ..."
     )
     voice_info = await bot.get_file(message.voice.file_id)
     voice_file = await bot.download_file(voice_info.file_path)
     voice_bytes = BytesIO(voice_file)
-    voice_bytes.name = "voice.ogg"
-    transcription = await services.stt_response(voice_bytes)
+    remote_file_url = await media.upload_file(
+        voice_bytes, file_name=message.document.file_name
+    )
+
+    # voice_bytes.name = "voice.ogg"
+    transcription = await services.stt_response(remote_file_url)
 
     msg = models.Message(user_id=message.user.uid, content=transcription)
     await msg.save()

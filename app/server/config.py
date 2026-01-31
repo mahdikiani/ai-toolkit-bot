@@ -27,6 +27,12 @@ class Settings(config.Settings):
 
     ai_url: str = os.getenv("AI_BASE_URL")
 
+    openrouter_api_key: str | None = os.getenv("OPENROUTER_API_KEY")
+    openrouter_base_url: str = os.getenv(
+        "OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"
+    )
+    soniox_api_key: str | None = os.getenv("SONIOX_API_KEY")
+
     @classmethod
     def get_log_config(cls, console_level: str = "INFO", **kwargs: object) -> dict:
         log_config = {
