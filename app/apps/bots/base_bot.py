@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import os
+from io import BytesIO
 
 import singleton
 from telebot.async_telebot import AsyncTeleBot
@@ -34,6 +36,7 @@ class BaseBot(AsyncTeleBot):
             parse_mode="markdown",
             **kwargs,
         )
+        self.lock = asyncio.Lock()
 
     def __str__(self) -> str:
         return self.link
@@ -76,6 +79,23 @@ class BaseBot(AsyncTeleBot):
                 logging.exception("send_message error")
                 raise
         return sent
+
+    async def get_file_telethon(self, chat_id: int, message_id: int) -> BytesIO:
+        from telethon import TelegramClient
+
+        async with self.lock:
+            client = await TelegramClient(
+                f"sessions/{self.me}",
+                os.getenv("TELEGRAM_API_ID"),
+                os.getenv("TELEGRAM_API_HASH"),
+            ).start(bot_token=os.getenv("TELEGRAM_TOKEN"))
+            # await client.start(bot_token=self.token)
+            entity = await client.get_input_entity(chat_id)
+            msg = await client.get_messages(entity, ids=message_id)
+            if not msg:
+                raise RuntimeError("Message not found or deleted.")
+
+            return msg.media
 
 
 class TelegramBot(BaseBot, metaclass=singleton.Singleton):

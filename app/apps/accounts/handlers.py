@@ -4,15 +4,15 @@ from contextlib import asynccontextmanager
 
 from aiocache import cached
 from usso import UserData
-from usso.session import AsyncUssoSession
+from usso.client import AsyncUssoClient
 
 from apps.accounts.schemas import Profile
 from server.config import Settings
 
 
 @asynccontextmanager
-async def get_usso_session() -> AsyncGenerator[AsyncUssoSession]:
-    async with AsyncUssoSession(
+async def get_usso_session() -> AsyncGenerator[AsyncUssoClient]:
+    async with AsyncUssoClient(
         usso_base_url=Settings.USSO_URL, api_key=Settings.API_KEY
     ) as session:
         yield session

@@ -5,8 +5,8 @@ services:
     hostname: ${PROJECT_NAME}
     env_file:
       - .env
-    # volumes:
-    #   - ./app:/app
+    volumes:
+      - ./app/sessions:/app/sessions:rw
     networks:
       - traefik-net
       - mongo-net

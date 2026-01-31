@@ -1,7 +1,7 @@
 import logging
 
 import singleton
-from fastapi_mongo_base.utils.basic import get_all_subclasses, try_except_wrapper
+from fastapi_mongo_base.utils import basic
 from telebot import async_telebot
 
 from apps.bots import base_bot, middlewares
@@ -11,7 +11,7 @@ from .bot_actions import callback, inline_query, inline_query_ai, message
 
 
 def get_bot(bot_name: str) -> base_bot.BaseBot:
-    for bot_cls in get_all_subclasses(base_bot.BaseBot):
+    for bot_cls in basic.get_all_subclasses(base_bot.BaseBot):
         bot: base_bot.BaseBot = bot_cls()
         if bot.me == bot_name:
             return bot
@@ -21,7 +21,7 @@ def get_bot(bot_name: str) -> base_bot.BaseBot:
 
 
 def get_bot_by_route(bot_route: str) -> base_bot.BaseBot:
-    for bot_cls in get_all_subclasses(base_bot.BaseBot):
+    for bot_cls in basic.get_all_subclasses(base_bot.BaseBot):
         bot: base_bot.BaseBot = bot_cls()
         if bot.webhook_route == bot_route:
             return bot
@@ -40,7 +40,7 @@ class BotHandler(metaclass=singleton.Singleton):
         if self.is_setup:
             return
 
-        for bot_cls in get_all_subclasses(base_bot.BaseBot):
+        for bot_cls in basic.get_all_subclasses(base_bot.BaseBot):
             bot: base_bot.BaseBot = bot_cls()
 
             await self.setup_webhook(bot)
@@ -52,7 +52,7 @@ class BotHandler(metaclass=singleton.Singleton):
         from apps.bots import routes
 
         reverse_url = routes.router.url_path_for("bot_update", bot=bot.webhook_route)
-        webhook_url = f"https://{Settings.root_url}{Settings.base_path}/{reverse_url}"
+        webhook_url = f"https://{Settings.root_url}{Settings.base_path}{reverse_url}"
         if (await bot.get_webhook_info()).url != webhook_url:
             logging.info("set webhook for %s with url: %s", bot, webhook_url)
             await bot.delete_webhook()
@@ -80,7 +80,7 @@ class BotHandler(metaclass=singleton.Singleton):
             )
 
 
-@try_except_wrapper
+@basic.try_except_wrapper
 async def update_bot(
     bot_route: str, update_dict: dict[str, object], **kwargs: object
 ) -> None:

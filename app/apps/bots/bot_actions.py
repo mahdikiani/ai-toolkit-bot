@@ -121,9 +121,11 @@ async def document(message: schemas.MessageOwned, bot: base_bot.BaseBot) -> None
     from utils import media
 
     response_message = await bot.reply_to(message, "Please wait document ...")
-    document_info = await bot.get_file(message.document.file_id)
-    document_file = await bot.download_file(document_info.file_path)
-
+    # document_info = await bot.get_file(message.document.file_id)
+    # document_file = await bot.download_file(document_info.file_path)
+    document_file = await bot.get_file_telethon(
+        message.chat.id, message.message_id
+    )
     remote_file_url = await media.upload_file(
         document_file, file_name=message.document.file_name
     )

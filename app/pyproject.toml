@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.1",
     "openai>=2.6.0",
     "telegram-bale-bot[aiohttp]>=4.27.0",
+    "telethon>=1.42.0",
     "usso>=0.28.41",
 ]
 
